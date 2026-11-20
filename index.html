@@ -847,12 +847,14 @@ function hasDogContent(d){
     .some(k => String(d[k] || "").trim() !== "");
 }
 function saveCurrent(){
-  const wasNew = !S.currentDogId;
-  if(S.currentDogId || hasDogContent(S.dog)) commitDog();   /* 犬情報＋出陳者等をまとめて保存 */
+  const existed = !!S.currentDogId;
+  const newDog = !existed && hasDogContent(S.dog);
+  if(existed || newDog) commitDog();   /* 犬情報＋出陳者等をまとめて保存 */
   else save();
   const t = new Date();
   const hh = ("0" + t.getHours()).slice(-2), mm = ("0" + t.getMinutes()).slice(-2);
-  toast((wasNew ? "新しく保存しました" : "更新しました") + "　" + hh + ":" + mm);
+  const msg = existed ? "更新しました" : (newDog ? "新しく保存しました" : "入力内容を保存しました");
+  toast(msg + "　" + hh + ":" + mm);
   updateSaveLabel();
   renderDogList();
 }

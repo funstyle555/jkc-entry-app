@@ -168,6 +168,7 @@
     background:#fff; border:1px solid var(--line); border-radius:999px; padding:2px 8px;
   }
   .dogswitch .dogchips{display:flex; flex-wrap:wrap; gap:7px}
+  .dogswitch .dsevent{font-size:11px; color:#4b5563; font-weight:600; margin:-3px 0 9px; line-height:1.35}
   .dogswitch .dogchip{
     font-family:inherit; text-align:left; line-height:1.2; cursor:pointer;
     padding:9px 13px; border-radius:11px; border:1.5px solid var(--line);
@@ -790,6 +791,13 @@ function buildDogSwitch(el, mode){
   now.textContent = cur ? "いま：" + dogLabel(cur) : "新しい犬を入力中";
   head.appendChild(now);
   el.appendChild(head);
+  const f = FORMS[S.event];
+  if(mode === "step2" && f){
+    const ev = document.createElement("div");
+    ev.className = "dsevent";
+    ev.textContent = f.short + " ／ 締切 " + f.deadline;
+    el.appendChild(ev);
+  }
 
   const chips = document.createElement("div");
   chips.className = "dogchips";

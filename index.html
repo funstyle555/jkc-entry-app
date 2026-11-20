@@ -88,6 +88,39 @@
   .row .g1{flex:0 0 92px}
   .row .g2{flex:1}
 
+  /* 生年月日：年・月・日のプルダウン */
+  .dobrow{display:flex; gap:7px}
+  .dobrow > *{min-width:0}
+  .dobrow select{
+    font-size:15.5px; padding:11px 20px 11px 6px; text-align:center; text-align-last:center;
+    background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.6 6 6.4l5-4.8' fill='none' stroke='%236b7280' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right 5px center; background-size:11px 8px;
+  }
+  .dobrow select:invalid, .dobrow select.ph{color:#9ca3af}
+  .dobrow .y{flex:1.35}
+  .dobrow .m{flex:1}
+  .dobrow .d{flex:1}
+  .note.warnnote{color:var(--warn); font-weight:600}
+
+  /* 入力内容の更新（保存） */
+  .saverow{display:flex; align-items:center; gap:9px; margin:-2px 0 12px}
+  .saverow .savebtn{
+    flex:0 0 auto; font-family:inherit; font-size:13px; font-weight:700; white-space:nowrap;
+    padding:11px 14px; border-radius:12px; border:1.5px solid var(--brand); color:var(--brand-dark);
+    background:#fff; cursor:pointer; box-shadow:0 1px 2px rgba(16,24,40,.05);
+  }
+  .saverow .savebtn:active{background:var(--brand-soft)}
+  .saverow .savetip{font-size:11px; color:var(--muted); line-height:1.35; flex:1}
+  #toast{
+    position:fixed; left:50%; bottom:calc(100px + env(safe-area-inset-bottom)); z-index:45;
+    transform:translate(-50%, 12px); opacity:0; pointer-events:none;
+    background:#0f766e; color:#fff; font-size:13.5px; font-weight:700;
+    padding:11px 18px; border-radius:999px; white-space:nowrap;
+    box-shadow:0 10px 26px rgba(13,124,114,.34);
+    transition:opacity .2s ease, transform .2s ease;
+  }
+  #toast.on{opacity:1; transform:translate(-50%, 0)}
+
   .chips{display:flex; flex-wrap:wrap; gap:7px}
   .chip{
     font-family:inherit; font-size:13px; padding:9px 13px; border-radius:999px;
@@ -156,6 +189,8 @@
 </head>
 <body>
 
+<div id="toast" role="status" aria-live="polite"></div>
+
 <header>
   <div class="brandrow">
     <span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h8.5L19 8v12.5H6z"/><path d="M14 3.5V8h4.5"/><path d="M9 12.5h7M9 16h4.5"/></svg></span>
@@ -207,6 +242,11 @@
       サンプル情報を入力
     </button>
 
+    <div class="saverow">
+      <button class="savebtn" id="saveNow" type="button">入力内容を更新（保存）</button>
+      <span class="savetip" id="saveTip">登録済みの内容を直したら押してください</span>
+    </div>
+
     <div class="card" id="dogCard" style="display:none">
       <h3><span class="num">犬</span>登録済みの犬</h3>
       <div class="doglist" id="dogList"></div>
@@ -250,8 +290,13 @@
         </div>
       </div>
       <div class="field">
-        <label for="f-dob">生年月日</label>
-        <input type="date" id="f-dob">
+        <label for="f-doby">生年月日</label>
+        <div class="dobrow">
+          <select id="f-doby" class="y" aria-label="生年月日の年"></select>
+          <select id="f-dobm" class="m" aria-label="生年月日の月"></select>
+          <select id="f-dobd" class="d" aria-label="生年月日の日"></select>
+        </div>
+        <div class="note" id="dobNote"></div>
       </div>
       <div class="field">
         <label for="f-mc">個体識別番号 <span class="hint">マイクロチップ15桁</span></label>
@@ -554,6 +599,83 @@ function fmtDob(iso){
   if(!m) return iso;
   return m[1] + "年 " + Number(m[2]) + "月 " + Number(m[3]) + "日";
 }
+
+/* ---------- 4b. 生年月日（年・月・日のプルダウン） ---------- */
+const DOB_BACK_YEARS = 20;          /* 今年から20年前まで選択可 */
+function fillSelect(el, items){     /* items: [{v, label}] */
+  el.innerHTML = "";
+  items.forEach(it => {
+    const o = document.createElement("option");
+    o.value = it.v; o.textContent = it.label;
+    el.appendChild(o);
+  });
+}
+function daysInMonth(y, m){
+  if(!m) return 31;
+  return new Date(Number(y) || 2000, Number(m), 0).getDate();  /* 年未選択時は閏年を許す */
+}
+function initDobSelects(){
+  const nowY = new Date().getFullYear();
+  const years = [{v:"", label:"----"}];
+  for(let y = nowY; y >= nowY - DOB_BACK_YEARS; y--) years.push({v:String(y), label:y + "年"});
+  fillSelect($("f-doby"), years);
+  const months = [{v:"", label:"--"}];
+  for(let m = 1; m <= 12; m++) months.push({v:String(m), label:m + "月"});
+  fillSelect($("f-dobm"), months);
+  rebuildDobDays();
+}
+function rebuildDobDays(){
+  const y = $("f-doby").value, m = $("f-dobm").value;
+  const cur = $("f-dobd").value;
+  const max = daysInMonth(y, m);
+  const days = [{v:"", label:"--"}];
+  for(let d = 1; d <= max; d++) days.push({v:String(d), label:d + "日"});
+  fillSelect($("f-dobd"), days);
+  $("f-dobd").value = (cur && Number(cur) <= max) ? cur : "";
+}
+function dobParts(){ return { y:$("f-doby").value, m:$("f-dobm").value, d:$("f-dobd").value }; }
+function dobFromParts(p){
+  if(!p.y || !p.m || !p.d) return "";
+  return p.y + "-" + ("0" + p.m).slice(-2) + "-" + ("0" + p.d).slice(-2);
+}
+function setDobSelects(dog){
+  const d = dog || {};
+  let y = "", m = "", dd = "";
+  const mm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d.dob || "");
+  if(mm){ y = mm[1]; m = String(Number(mm[2])); dd = String(Number(mm[3])); }
+  else { y = d.dobY || ""; m = d.dobM || ""; dd = d.dobD || ""; }
+  const ySel = $("f-doby");
+  if(y && !Array.from(ySel.options).some(o => o.value === y)){
+    /* 範囲外の古い生年（既存データ）も表示できるよう選択肢を追加 */
+    const o = document.createElement("option");
+    o.value = y; o.textContent = y + "年";
+    ySel.insertBefore(o, ySel.options[1] || null);
+  }
+  ySel.value = y;
+  $("f-dobm").value = m;
+  rebuildDobDays();
+  $("f-dobd").value = dd;
+  updateDobState();
+}
+function updateDobState(){
+  const p = dobParts();
+  S.dog.dobY = p.y; S.dog.dobM = p.m; S.dog.dobD = p.d;
+  S.dog.dob = dobFromParts(p);
+  const filled = [p.y, p.m, p.d].filter(Boolean).length;
+  const partial = filled > 0 && filled < 3;
+  const note = $("dobNote");
+  if(note){
+    note.textContent = partial ? "年・月・日をすべて選ぶと生年月日が入ります" : "";
+    note.classList.toggle("warnnote", partial);
+  }
+  clearResult();
+}
+["f-doby", "f-dobm", "f-dobd"].forEach(id => {
+  $(id).addEventListener("change", () => {
+    if(id === "f-doby" || id === "f-dobm") rebuildDobDays();  /* 月末日を合わせる */
+    updateDobState();
+  });
+});
 function setStep(n){
   S.step = n;
   ["step1","step2","step3"].forEach((id, i) => $(id).classList.toggle("on", i === n - 1));
@@ -612,7 +734,7 @@ function syncFormFromState(){
   const d = S.dog, o = S.owner, h = S.handler, a = S.applicant;
   const map = {
     "f-breed":d.breed, "f-furigana":d.furigana, "f-dogname":d.dogname, "f-callname":d.callname,
-    "f-reg1":d.reg1, "f-reg2":d.reg2, "f-reg3":d.reg3, "f-dob":d.dob, "f-mc":d.mc,
+    "f-reg1":d.reg1, "f-reg2":d.reg2, "f-reg3":d.reg3, "f-mc":d.mc,
     "f-sire":d.sire, "f-dam":d.dam,
     "f-okana":o.kana, "f-oname":o.name, "f-oclub":o.club, "f-oclubno":o.clubNo,
     "f-ozip":o.zip, "f-oaddr":o.addr, "f-otel":o.tel,
@@ -621,6 +743,8 @@ function syncFormFromState(){
     "f-anyname":a.name, "f-acontact":a.contact
   };
   Object.keys(map).forEach(id => { const el = $(id); if(el) el.value = map[id] || ""; });
+  setDobSelects(d);
+  updateSaveLabel();
   $("f-hsame").checked = S.handlerSame;
   $("handlerBox").style.display = S.handlerSame ? "none" : "block";
   updateMcPreview();
@@ -629,7 +753,7 @@ function syncFormFromState(){
 const FIELD_MAP = {
   "f-breed":["dog","breed"], "f-furigana":["dog","furigana"], "f-dogname":["dog","dogname"],
   "f-callname":["dog","callname"], "f-reg1":["dog","reg1"], "f-reg2":["dog","reg2"], "f-reg3":["dog","reg3"],
-  "f-dob":["dog","dob"], "f-mc":["dog","mc"], "f-sire":["dog","sire"], "f-dam":["dog","dam"],
+  "f-mc":["dog","mc"], "f-sire":["dog","sire"], "f-dam":["dog","dam"],
   "f-okana":["owner","kana"], "f-oname":["owner","name"], "f-oclub":["owner","club"],
   "f-oclubno":["owner","clubNo"], "f-ozip":["owner","zip"], "f-oaddr":["owner","addr"], "f-otel":["owner","tel"],
   "f-hkana":["handler","kana"], "f-hname":["handler","name"], "f-hclub":["handler","club"],
@@ -700,6 +824,40 @@ $("fillSample").addEventListener("click", () => {
   window.scrollTo({top:0, behavior:"smooth"});
 });
 
+/* ---------- 8b. 入力内容の更新（上書き保存） ---------- */
+let toastTimer = null;
+function toast(msg){
+  const el = $("toast");
+  if(!el) return;
+  el.textContent = msg;
+  el.classList.add("on");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("on"), 2600);
+}
+function updateSaveLabel(){
+  const b = $("saveNow");
+  if(b) b.textContent = S.currentDogId ? "入力内容を更新（保存）" : "入力内容を保存";
+  const tip = $("saveTip");
+  if(tip) tip.textContent = S.currentDogId
+    ? "登録済みの内容を直したら押してください"
+    : "入力した内容を登録しておけます";
+}
+function hasDogContent(d){
+  return !!d && ["breed","furigana","dogname","callname","reg1","reg2","reg3","dob","mc","sire","dam"]
+    .some(k => String(d[k] || "").trim() !== "");
+}
+function saveCurrent(){
+  const wasNew = !S.currentDogId;
+  if(S.currentDogId || hasDogContent(S.dog)) commitDog();   /* 犬情報＋出陳者等をまとめて保存 */
+  else save();
+  const t = new Date();
+  const hh = ("0" + t.getHours()).slice(-2), mm = ("0" + t.getMinutes()).slice(-2);
+  toast((wasNew ? "新しく保存しました" : "更新しました") + "　" + hh + ":" + mm);
+  updateSaveLabel();
+  renderDogList();
+}
+$("saveNow").addEventListener("click", saveCurrent);
+
 /* ---------- 9. 下部バー ---------- */
 function renderBar(){
   const inner = $("barInner");
@@ -707,6 +865,11 @@ function renderBar(){
   if(S.step === 1){ $("bar").style.display = "none"; return; }
   $("bar").style.display = "block";
   if(S.step === 2){
+    const sb = document.createElement("button");
+    sb.className = "btn ghost small"; sb.id = "saveNow2"; sb.textContent = "更新";
+    sb.style.flex = "0 0 86px";
+    sb.addEventListener("click", saveCurrent);
+    inner.appendChild(sb);
     const b = document.createElement("button");
     b.className = "btn"; b.textContent = "この内容で保存して確認へ";
     b.addEventListener("click", () => { commitDog(); buildSummary(); setStep(3); });
@@ -980,6 +1143,8 @@ if(S.currentDogId){
   if(d) S.dog = JSON.parse(JSON.stringify(d));
 }
 if(!S.dog.cls) S.dog.cls = "3度";
+initDobSelects();
+updateSaveLabel();
 renderBar();
 document.querySelectorAll(".event").forEach(b => {
   if(b.getAttribute("data-event") === S.event) b.style.borderColor = "var(--brand)";

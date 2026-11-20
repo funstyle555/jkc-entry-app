@@ -1171,6 +1171,16 @@ function removePrintFrame(){
   printFrame = null;
 }
 
+/* PDFを新しいタブで開く（「PDFを開く・保存する」と同じ振る舞い） */
+function openPdfInNewTab(url){
+  try{
+    const a = document.createElement("a");
+    a.href = url; a.target = "_blank"; a.rel = "noopener";
+    document.body.appendChild(a); a.click(); a.remove();
+    return true;
+  }catch(e){ return false; }
+}
+
 function isAndroid(){
   return /Android/i.test(navigator.userAgent || "");
 }
@@ -1184,19 +1194,15 @@ function printPdf(){
 
   /* iPhone / iPad: SafariではPDFの自動印刷ができないため、PDFを開いて共有シートへ */
   if(isIosSafari()){
-    let w = null;
-    try{ w = window.open(url, "_blank"); }catch(e){}
-    if(w) toast(IOS_PRINT_HINT, 7000, true);
-    else toast("新規タブを開けませんでした。「PDFを開く・保存する」からPDFを開いて印刷してください", 7000, true);
+    if(openPdfInNewTab(url)) toast(IOS_PRINT_HINT, 7000, true);
+    else toast("PDFを開けませんでした。「PDFを開く・保存する」からPDFを開いて印刷してください", 7000, true);
     return;
   }
 
   /* Android: ChromeはPDFをiframe内で表示できないため、新しいタブ（PDFビューア）で開く */
   if(isAndroid()){
-    let w = null;
-    try{ w = window.open(url, "_blank"); }catch(e){}
-    if(w) toast("PDFを開きました。印刷するときは、開いたPDFのメニューから「印刷」を選んでください", 7000, true);
-    else toast("新規タブを開けませんでした。「PDFを開く・保存する」からPDFを開いて印刷してください", 7000, true);
+    if(openPdfInNewTab(url)) toast("PDFを開きました。印刷するときは、開いたPDFのメニューから「印刷」を選んでください", 7000, true);
+    else toast("PDFを開けませんでした。「PDFを開く・保存する」からPDFを開いて印刷してください", 7000, true);
     return;
   }
 

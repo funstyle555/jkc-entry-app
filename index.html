@@ -154,13 +154,34 @@
     padding:12px 14px; border-radius:12px; border:1.5px dashed var(--brand); color:var(--brand-dark);
     background:var(--brand-soft); cursor:pointer; margin-bottom:12px;
   }
-  .doglist{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px}
-  .dogitem{
-    font-family:inherit; font-size:13px; padding:9px 13px; border-radius:12px; border:1.5px solid var(--line);
-    background:#fbfcfd; cursor:pointer; font-weight:600; color:#374151; text-align:left;
+  /* 犬の切り替えバー（ステップ2・ステップ3の上部） */
+  .dogswitch{
+    background:linear-gradient(165deg,#e9f6f4 0%,#ffffff 78%);
+    border:1.5px solid var(--brand); border-radius:14px;
+    padding:11px 12px 12px; margin:0 0 12px;
+    box-shadow:0 3px 12px rgba(13,124,114,.12);
   }
-  .dogitem.on{border-color:var(--brand); background:var(--brand-soft); color:var(--brand-dark)}
-  .dogitem small{display:block; font-size:10.5px; color:var(--muted); font-weight:500}
+  .dogswitch .dshead{display:flex; align-items:baseline; gap:8px; margin-bottom:9px}
+  .dogswitch .dstitle{font-size:13px; font-weight:800; color:var(--brand-dark); letter-spacing:.01em}
+  .dogswitch .dsnow{
+    margin-left:auto; font-size:11px; font-weight:700; color:#4b5563; white-space:nowrap;
+    background:#fff; border:1px solid var(--line); border-radius:999px; padding:2px 8px;
+  }
+  .dogswitch .dogchips{display:flex; flex-wrap:wrap; gap:7px}
+  .dogswitch .dogchip{
+    font-family:inherit; text-align:left; line-height:1.2; cursor:pointer;
+    padding:9px 13px; border-radius:11px; border:1.5px solid var(--line);
+    background:#fff; color:#374151; font-size:14px; font-weight:700;
+    min-height:44px; display:flex; flex-direction:column; justify-content:center;
+  }
+  .dogswitch .dogchip small{display:block; font-size:10.5px; font-weight:600; color:var(--muted); margin-top:3px}
+  .dogswitch .dogchip.on{
+    background:var(--brand); border-color:var(--brand); color:#fff;
+    box-shadow:0 4px 12px rgba(13,124,114,.26);
+  }
+  .dogswitch .dogchip.on small{color:rgba(255,255,255,.82)}
+  .dogswitch .dogchip.on .nm::before{content:"✓ "}
+  .dogswitch .dogadd{border-style:dashed; border-color:var(--brand); color:var(--brand-dark); background:rgba(255,255,255,.72)}
 
   .checkline{display:flex; align-items:center; gap:9px; font-size:13.5px; font-weight:600; padding:4px 0 6px}
   .checkline input{width:19px; height:19px; accent-color:var(--brand)}
@@ -229,6 +250,9 @@
     <button class="backlink" id="back1">‹ 大会を選び直す</button>
     <div class="warn" id="formNote" style="display:none"></div>
 
+    <!-- 出陳する犬の切り替え（入力フォームの一番上） -->
+    <div id="dogSwitchBar" class="dogswitch" style="display:none"></div>
+
     <button class="samplebtn" id="fillSample">
       <svg class="ico" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H12z"/></svg>
       サンプル情報を入力
@@ -237,12 +261,6 @@
     <div class="saverow">
       <button class="savebtn" id="saveNow" type="button">入力内容を更新（保存）</button>
       <span class="savetip" id="saveTip">登録済みの内容を直したら押してください</span>
-    </div>
-
-    <div class="card" id="dogCard" style="display:none">
-      <h3><span class="num">犬</span>登録済みの犬</h3>
-      <div class="doglist" id="dogList"></div>
-      <button class="btn ghost small" id="newDog">＋ 新しい犬を登録</button>
     </div>
 
     <div class="card">
@@ -401,6 +419,8 @@
   <!-- ========== STEP 3 ========== -->
   <section class="step" id="step3">
     <button class="backlink" id="back2">‹ 入力内容を修正する</button>
+    <!-- 2頭目以降の申込書を作るための切り替えバー（確認画面の上部） -->
+    <div id="dogSwitchBar3" class="dogswitch" style="display:none"></div>
     <div class="card">
       <h3><span class="num"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9.5 18 20 6.5"/></svg></span>この内容で作成します</h3>
       <ul class="summary" id="summaryList"></ul>
@@ -650,7 +670,7 @@ function renderEventList(){
       save();
       buildChips();
       syncFormFromState();
-      renderDogList();
+      renderDogSwitchBars();
       setStep(2);
     });
     wrap.appendChild(btn);
@@ -744,33 +764,115 @@ $("f-hsame").addEventListener("change", () => {
 });
 
 /* ---------- 8. 犬の登録・切替 ---------- */
-function renderDogList(){
-  const wrap = $("dogList"), card = $("dogCard");
-  if(!S.dogs.length){ card.style.display = "none"; return; }
-  card.style.display = "block";
-  wrap.innerHTML = "";
+const SWITCH_TITLE = {
+  step2: "🐕 出陳する犬を切り替える",
+  step3: "🐕 別の犬に切り替えて申込書を作る"
+};
+function dogLabel(d){
+  return String((d && (d.callname || d.dogname)) || "").trim() || "名称未設定";
+}
+/* 上部の切り替えバーを組み立てる（mode: "step2" / "step3"） */
+function buildDogSwitch(el, mode){
+  if(!el) return;
+  el.innerHTML = "";
+  if(!S.dogs.length){ el.style.display = "none"; return; }
+  el.style.display = "";
+
+  const head = document.createElement("div");
+  head.className = "dshead";
+  const tt = document.createElement("span");
+  tt.className = "dstitle";
+  tt.textContent = SWITCH_TITLE[mode] || SWITCH_TITLE.step2;
+  head.appendChild(tt);
+  const now = document.createElement("span");
+  now.className = "dsnow";
+  const cur = S.dogs.find(x => x.id === S.currentDogId);
+  now.textContent = cur ? "いま：" + dogLabel(cur) : "新しい犬を入力中";
+  head.appendChild(now);
+  el.appendChild(head);
+
+  const chips = document.createElement("div");
+  chips.className = "dogchips";
   S.dogs.forEach(d => {
     const b = document.createElement("button");
     b.type = "button";
-    b.className = "dogitem" + (d.id === S.currentDogId ? " on" : "");
-    b.innerHTML = (d.callname || d.dogname || "名称未設定") +
-      "<small>" + [d.breed, d.cat, d.cls].filter(Boolean).join(" / ") + "</small>";
-    b.addEventListener("click", () => {
-      S.currentDogId = d.id;
-      S.dog = JSON.parse(JSON.stringify(d));
-      const f = FORMS[S.event];
-      if(!f.classes.includes(S.dog.cls)) S.dog.cls = f.classes[0];
-      save(); renderDogList(); syncFormFromState(); clearResult();
-    });
-    wrap.appendChild(b);
+    b.className = "dogchip" + (d.id === S.currentDogId ? " on" : "");
+    b.setAttribute("aria-pressed", d.id === S.currentDogId ? "true" : "false");
+    const nm = document.createElement("span");
+    nm.className = "nm";
+    nm.textContent = dogLabel(d);
+    b.appendChild(nm);
+    const sub = document.createElement("small");
+    sub.textContent = [d.breed, d.cat, d.cls].filter(Boolean).join(" / ") || "—";
+    b.appendChild(sub);
+    b.addEventListener("click", () => pickDog(d.id, mode));
+    chips.appendChild(b);
   });
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "dogchip dogadd";
+  const anm = document.createElement("span");
+  anm.className = "nm";
+  anm.textContent = "＋ 新しい犬を追加";
+  add.appendChild(anm);
+  const asub = document.createElement("small");
+  asub.textContent = "フォームを空にして入力";
+  add.appendChild(asub);
+  add.addEventListener("click", () => startNewDog(mode));
+  chips.appendChild(add);
+  el.appendChild(chips);
 }
-$("newDog").addEventListener("click", () => {
+function renderDogSwitchBars(){
+  buildDogSwitch($("dogSwitchBar"), "step2");
+  buildDogSwitch($("dogSwitchBar3"), "step3");
+  const area = $("resultArea");
+  const inDone = area ? area.querySelector(".dogswitch") : null;
+  if(inDone) buildDogSwitch(inDone, "step3");
+}
+function fitDogClass(d){
+  const f = FORMS[S.event];
+  if(f && !f.classes.includes(d.cls)) d.cls = f.classes.includes("3度") ? "3度" : f.classes[0];
+}
+/* 登録済みの犬へ切り替え */
+function pickDog(id, mode){
+  if(id === S.currentDogId){
+    /* 入力中の内容を消さないため、いま選ばれている犬は何もしない */
+    if(mode === "step3") window.scrollTo({top:0, behavior:"smooth"});
+    return;
+  }
+  const d = S.dogs.find(x => x.id === id);
+  if(!d) return;
+  S.currentDogId = id;
+  S.dog = JSON.parse(JSON.stringify(d));
+  fitDogClass(S.dog);
+  save();
+  syncFormFromState();
+  renderDogSwitchBars();
+  updateSaveLabel();
+  clearResult();
+  if(mode === "step3"){
+    buildSummary();
+    window.scrollTo({top:0, behavior:"smooth"});
+    toast("「" + dogLabel(d) + "」に切り替えました。この内容でPDFを作成できます", 3600);
+  }else{
+    toast("「" + dogLabel(d) + "」に切り替えました", 2200);
+  }
+}
+/* 新しい犬の入力へ切り替え */
+function startNewDog(mode){
   S.currentDogId = null;
   S.dog = emptyDog();
-  S.dog.cls = FORMS[S.event].classes.includes("3度") ? "3度" : FORMS[S.event].classes[0];
-  renderDogList(); syncFormFromState(); clearResult();
-});
+  fitDogClass(S.dog);
+  save();
+  const area = $("resultArea");
+  if(area) area.innerHTML = "";   /* 作成済みPDFの表示は消す */
+  if(mode === "step3") setStep(2);
+  syncFormFromState();
+  renderDogSwitchBars();
+  updateSaveLabel();
+  toast("新しい犬の入力に切り替えました", 2600);
+  window.scrollTo({top:0, behavior:"smooth"});
+}
 $("fillSample").addEventListener("click", () => {
   S.dog = JSON.parse(JSON.stringify(SAMPLE.dog));
   S.owner = Object.assign(emptyOwner(), SAMPLE.owner);
@@ -814,7 +916,7 @@ function saveCurrent(){
   const msg = existed ? "更新しました" : (newDog ? "新しく保存しました" : "入力内容を保存しました");
   toast(msg + "　" + hh + ":" + mm);
   updateSaveLabel();
-  renderDogList();
+  renderDogSwitchBars();
 }
 $("saveNow").addEventListener("click", saveCurrent);
 
@@ -832,7 +934,12 @@ function renderBar(){
     inner.appendChild(sb);
     const b = document.createElement("button");
     b.className = "btn"; b.textContent = "この内容で保存して確認へ";
-    b.addEventListener("click", () => { commitDog(); buildSummary(); setStep(3); });
+    b.addEventListener("click", () => {
+      commitDog();
+      renderDogSwitchBars();
+      buildSummary();
+      setStep(3);
+    });
     inner.appendChild(b);
   } else {
     const b = document.createElement("button");
@@ -1117,6 +1224,11 @@ async function makePdf(){
     area.querySelector(".f").textContent = filename;
     area.querySelector("#dl2").href = url;
     area.querySelector("#dl2").setAttribute("target", "_blank");
+    /* 完了画面の上部にも犬の切り替えバー（2頭目のPDFをそのまま作れる） */
+    const sw = document.createElement("div");
+    sw.className = "dogswitch";
+    area.insertBefore(sw, area.firstChild);
+    buildDogSwitch(sw, "step3");
     renderPreview(bytes);
     if(missing.size){
       const w = document.createElement("div");
@@ -1253,6 +1365,7 @@ initDobSelects();
 updateSaveLabel();
 renderBar();
 renderEventList();
+renderDogSwitchBars();
 /* 埋め込みフォントを画面表示にも使う（無ければ端末フォント） */
 try{
   const face = new FontFace("AppJP", getFontBytes().buffer);

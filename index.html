@@ -122,6 +122,10 @@
     transition:opacity .2s ease, transform .2s ease;
   }
   #toast.on{opacity:1; transform:translate(-50%, 0)}
+  #toast.wide{
+    white-space:normal; max-width:calc(100vw - 36px); border-radius:16px;
+    text-align:center; line-height:1.55; font-size:12.5px; font-weight:600; padding:12px 16px;
+  }
 
   .chips{display:flex; flex-wrap:wrap; gap:7px}
   .chip{
@@ -140,6 +144,12 @@
   .btn:disabled{opacity:.45; box-shadow:none}
   .btn.ghost{background:#fff; color:var(--brand-dark); border:1.5px solid var(--line); box-shadow:none}
   .btn.small{font-size:14px; padding:11px; box-shadow:none; border-radius:12px}
+  .btnrow{display:flex; flex-direction:column; gap:8px}
+  .btnrow .btn{width:100%}
+  .printbtn{display:flex; align-items:center; justify-content:center; gap:7px}
+  .btn.small.printbtn{font-size:15px; font-weight:800; letter-spacing:.01em; padding:13px 12px}
+  .printbtn .pico{font-size:17px; line-height:1}
+  .printnote{line-height:1.55; margin-top:10px}
 
   .bar{
     position:fixed; left:0; right:0; bottom:0; z-index:30;
@@ -894,13 +904,14 @@ $("fillSample").addEventListener("click", () => {
 
 /* ---------- 8b. 入力内容の更新（上書き保存） ---------- */
 let toastTimer = null;
-function toast(msg, ms){
+function toast(msg, ms, wide){
   const el = $("toast");
   if(!el) return;
   el.textContent = msg;
+  el.classList.toggle("wide", !!wide);
   el.classList.add("on");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove("on"), ms || 2600);
+  toastTimer = setTimeout(() => { el.classList.remove("on"); el.classList.remove("wide"); }, ms || 2600);
 }
 function updateSaveLabel(){
   const b = $("saveNow");
@@ -1136,6 +1147,92 @@ function buildData(){
   }, person(o, "owner"), person(h, "handler"));
 }
 
+/* ---------- 11a. 印刷（作成したPDF本体を印刷する） ---------- */
+/*  アプリの画面ではなく、生成した申込書PDFを印刷する。
+    - iPhone/iPad Safari: PDFを新しいタブで開き、共有シートの「プリント」で印刷
+    - Android: PDFを新しいタブで開き、PDFのメニューから印刷
+    - PC・その他ブラウザ: 画面外のiframeにPDFを読み込んでその印刷ダイアログを開く
+    - 自動で開けないブラウザ（Android等）: その場で「PDFを開く・保存する」へ案内  */
+let lastPdf = null;          /* {url, filename} 直前に作成したPDFのBlob URL */
+let printFrame = null;
+const IOS_PRINT_HINT = "印刷画面が出ないときは、PDFを開いて共有ボタン（□↑）→「プリント」を選んでください";
+
+function isIosSafari(){
+  const ua = navigator.userAgent || "";
+  if(/iPad|iPhone|iPod/.test(ua)) return true;
+  /* iPadOS 13以降はMacを名乗るのでタッチ点数で判別 */
+  return navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1;
+}
+
+function removePrintFrame(){
+  if(printFrame && printFrame.parentNode){
+    try{ printFrame.parentNode.removeChild(printFrame); }catch(e){}
+  }
+  printFrame = null;
+}
+
+function isAndroid(){
+  return /Android/i.test(navigator.userAgent || "");
+}
+
+function printPdf(){
+  if(!lastPdf || !lastPdf.url){
+    toast("先に「申込書PDFを作成する」を押してください", 3200);
+    return;
+  }
+  const url = lastPdf.url;
+
+  /* iPhone / iPad: SafariではPDFの自動印刷ができないため、PDFを開いて共有シートへ */
+  if(isIosSafari()){
+    let w = null;
+    try{ w = window.open(url, "_blank"); }catch(e){}
+    if(w) toast(IOS_PRINT_HINT, 7000, true);
+    else toast("新規タブを開けませんでした。「PDFを開く・保存する」からPDFを開いて印刷してください", 7000, true);
+    return;
+  }
+
+  /* Android: ChromeはPDFをiframe内で表示できないため、新しいタブ（PDFビューア）で開く */
+  if(isAndroid()){
+    let w = null;
+    try{ w = window.open(url, "_blank"); }catch(e){}
+    if(w) toast("PDFを開きました。印刷するときは、開いたPDFのメニューから「印刷」を選んでください", 7000, true);
+    else toast("新規タブを開けませんでした。「PDFを開く・保存する」からPDFを開いて印刷してください", 7000, true);
+    return;
+  }
+
+  /* それ以外: 画面外のiframeでPDFを開き、読み込み後に印刷ダイアログを出す */
+  removePrintFrame();
+  const f = document.createElement("iframe");
+  f.title = "印刷用PDF";
+  f.setAttribute("aria-hidden", "true");
+  f.style.cssText = "position:fixed; left:-10000px; top:0; width:820px; height:1160px; border:0;";
+  let settled = false, timer = null;
+  f.onload = () => {
+    if(settled) return;
+    settled = true;
+    if(timer) clearTimeout(timer);
+    try{
+      f.contentWindow.focus();
+      f.contentWindow.print();
+      setTimeout(removePrintFrame, 60000);
+    }catch(e){
+      console.warn("印刷ダイアログを開けませんでした", e);
+      removePrintFrame();
+      toast("印刷画面を自動で開けませんでした。「PDFを開く・保存する」からPDFを開いて印刷してください", 7000, true);
+    }
+  };
+  f.src = url;
+  document.body.appendChild(f);
+  printFrame = f;
+  /* PDFを読み込めないブラウザ（AndroidのChrome等）向けの案内 */
+  timer = setTimeout(() => {
+    if(settled) return;
+    settled = true;
+    removePrintFrame();
+    toast("このブラウザでは自動の印刷画面に対応していません。「PDFを開く・保存する」からPDFを開いて印刷してください", 7000, true);
+  }, 6000);
+}
+
 async function makePdf(){
   const btn = $("makePdf");
   const area = $("resultArea");
@@ -1224,14 +1321,30 @@ async function makePdf(){
         '<p class="t"><svg class="ico big" viewBox="0 0 24 24" fill="none" stroke="#0f766e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.2"/><path d="M7.8 12.4l2.9 2.9 5.5-6"/></svg>' +
           '申込書PDFを作成しました</p>' +
         '<div class="f"></div>' +
-        '<a class="btn small" id="dl2" style="text-align:center;text-decoration:none;display:block">PDFを開く・保存する</a>' +
+        '<div class="btnrow">' +
+          '<button class="btn small printbtn" id="printPdf" type="button"><span class="pico" aria-hidden="true">🖨️</span>印刷する</button>' +
+          '<a class="btn small ghost" id="dl2" style="text-align:center;text-decoration:none;display:block">PDFを開く・保存する</a>' +
+        '</div>' +
+        '<p class="note printnote" id="printNote" style="display:none"></p>' +
       '</div>' +
       '<div class="card"><h3><span class="num"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg></span>できあがり（プレビュー）</h3>' +
         '<div id="previewWrap"><div class="previewmsg">プレビューを読み込み中…</div></div>' +
         '<p class="note">印刷して提出してください。プレビューが表示されない場合は、上のボタンからPDFを開いてご確認ください。</p></div>';
     area.querySelector(".f").textContent = filename;
+    lastPdf = { url: url, filename: filename };
     area.querySelector("#dl2").href = url;
     area.querySelector("#dl2").setAttribute("target", "_blank");
+    area.querySelector("#printPdf").addEventListener("click", printPdf);
+    if(isIosSafari()){
+      const pn = area.querySelector("#printNote");
+      pn.textContent = "iPhoneではPDFを開いて印刷します。印刷画面が出ないときは、共有ボタン（□↑）→「プリント」を選んでください。";
+      pn.style.display = "block";
+    }
+    /* 作成したPDF（印刷・保存ボタン）が見える位置へ */
+    try{
+      const y = area.getBoundingClientRect().top + window.pageYOffset - 10;
+      window.scrollTo({ top: y, behavior: "smooth" });
+    }catch(e){}
     /* 完了画面の上部にも犬の切り替えバー（2頭目のPDFをそのまま作れる） */
     const sw = document.createElement("div");
     sw.className = "dogswitch";

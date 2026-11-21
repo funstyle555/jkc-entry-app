@@ -51,6 +51,7 @@ JKCアジリティー競技会の出陳申込書PDFを、スマホのブラウ�
 - 「💾 ファイルに保存（.json）」: `jkc-entry-backup-YYYYMMDD.json` として保存（iPhoneは「ファイル」アプリ内「ダウンロード」）
 - 「📂 ファイルから復元」: 保存したJSONを選ぶと、その端末の登録内容を置きかえます（登録があるときは確認あり。読めないファイルは何も変更しません）
 - ファイルの形: `{"v":1,"app":"jkc-entry-app","savedAt":"…","event":"1216","dogs":[…],"currentDogId":"…","owner":{…},"handlerSame":true,"handler":{…},"applicant":{…}}`
+- ボタンの下に保存先を小さく表示します（`保存先パス: ファイル ＞ ブラウズ ＞ ダウンロード（iCloud Drive または このiPhone内）`・`ファイル名: jkc-entry-backup-YYYYMMDD.json`・`入力データ保存先: この端末のブラウザ内（localStorage・外部送信なし）`）
 
 ## しくみ
 

@@ -65,6 +65,7 @@ JKCアジリティー競技会の出陳申込書PDFを、スマホのブラウ�
 - 日本語は @pdf-lib/fontkit 経由で IPA Pゴシックのサブセット（常用漢字・人名漢字）を埋め込み
 - 入力内容は端末の localStorage に保存（サーバーへの送信はありません）
 - できあがりの確認用プレビューは pdf.js で描画
+- 一番上の写真（アジリティーで跳ぶパピヨン）は `index.html` に Base64 で同梱（幅1200pxのJPEG・約85KB）。元画像は `scripts/assets/hero_papillon_master.jpg`、ビルド時に `scripts/build_dragonhat_app.py` がリサイズして埋め込みます。表示は `.hero`（`object-fit:cover` / `object-position:50% 56%`、高さ `clamp(160px,23vh,220px)`）で調整できます
 
 ## 注意
 

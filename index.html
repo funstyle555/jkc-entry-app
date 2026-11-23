@@ -1939,10 +1939,12 @@ async function makePdf(){
       pn.textContent = "iPhoneではPDFを開いて印刷します。印刷画面が出ないときは、共有ボタン（□↑）→「プリント」を選んでください。";
       pn.style.display = "block";
     }
-    /* 作成したPDF（転送・印刷ボタン）が見える一番上の位置へ */
+    /* 作成したPDF（転送・印刷ボタン）がヘッダーの下に丸ごと見える位置へ */
     try{
-      const y = area.getBoundingClientRect().top + window.pageYOffset - 10;
-      window.scrollTo({ top: y, behavior: "smooth" });
+      const hdr = document.querySelector("header");
+      const hh = hdr ? hdr.getBoundingClientRect().height : 120;
+      const y = area.getBoundingClientRect().top + window.pageYOffset - hh - 12;
+      window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
     }catch(e){}
     if(missing.size){
       const w = document.createElement("div");

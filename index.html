@@ -323,6 +323,45 @@
     font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
     font-size:10.5px; color:#374151; letter-spacing:-.01em;
   }
+
+  /* 転送・印刷メニュー（モーダル） */
+  .sharemask{
+    position:fixed; inset:0; z-index:80;
+    background:rgba(15,23,42,.52); backdrop-filter:blur(3px);
+    display:none; align-items:flex-end; justify-content:center;
+    padding:12px; padding-bottom:calc(12px + env(safe-area-inset-bottom));
+  }
+  .sharemask.open{display:flex}
+  @media (min-width:520px){ .sharemask{align-items:center} }
+  .sharesheet{
+    width:100%; max-width:440px; background:#fff; border-radius:18px;
+    padding:16px 16px 14px; box-shadow:0 18px 42px rgba(0,0,0,.24);
+    border:1px solid var(--line);
+  }
+  .sharehead{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px}
+  .sharehead h3{margin:0; font-size:16px; font-weight:800; color:var(--ink)}
+  .sharex{
+    border:none; background:#f3f4f6; color:#374151; font-family:inherit;
+    font-size:13px; font-weight:700; padding:6px 11px; border-radius:999px; cursor:pointer;
+  }
+  .sharesub{margin:0 0 12px; font-size:12.5px; color:var(--muted); line-height:1.45}
+  .sharelist{display:flex; flex-direction:column; gap:8px}
+  .shareopt{
+    display:flex; align-items:center; gap:11px; width:100%; text-align:left;
+    font-family:inherit; cursor:pointer; padding:12px 13px; border-radius:13px;
+    border:1.5px solid var(--line); background:#fff; color:var(--ink);
+  }
+  .shareopt:active{background:var(--brand-soft); border-color:var(--brand)}
+  .shareopt-ico{font-size:22px; line-height:1; flex:none; width:28px; text-align:center}
+  .shareopt-body{flex:1; min-width:0; display:flex; flex-direction:column; gap:2px}
+  .shareopt-title{font-size:15px; font-weight:800; color:var(--ink); line-height:1.2}
+  .shareopt-sub{font-size:11.5px; color:var(--muted); line-height:1.3}
+  .shareopt-chev{font-size:16px; font-weight:700; color:var(--brand); flex:none}
+  .sharenote{
+    margin:11px 0 0; font-size:11.5px; color:#4b5563; line-height:1.5;
+    background:#f8fafc; border:1px solid var(--line); border-radius:10px; padding:8px 10px;
+  }
+  .sharenote.warn{background:var(--warn-soft); border-color:#f59e0b; color:#7c2d12; font-weight:600}
 </style>
 </head>
 <body>
@@ -641,6 +680,51 @@
     </p>
   </section>
 </main>
+
+<div class="sharemask" id="shareModal" role="dialog" aria-modal="true" aria-labelledby="shareModalTitle">
+  <div class="sharesheet">
+    <div class="sharehead">
+      <h3 id="shareModalTitle">📤 転送・印刷を選ぶ</h3>
+      <button class="sharex" id="shareModalClose" type="button">閉じる</button>
+    </div>
+    <p class="sharesub">使いたい方法を選ぶと、送信や印刷の画面が開きます。</p>
+    <div class="sharelist">
+      <button class="shareopt" type="button" data-share-mode="mail">
+        <span class="shareopt-ico" aria-hidden="true">✉️</span>
+        <span class="shareopt-body">
+          <span class="shareopt-title">メール転送</span>
+          <span class="shareopt-sub">次の画面で「メール」を選んで送信</span>
+        </span>
+        <span class="shareopt-chev" aria-hidden="true">›</span>
+      </button>
+      <button class="shareopt" type="button" data-share-mode="airdrop">
+        <span class="shareopt-ico" aria-hidden="true">📡</span>
+        <span class="shareopt-body">
+          <span class="shareopt-title">AirDrop</span>
+          <span class="shareopt-sub">次の画面で「AirDrop」を選んで送信</span>
+        </span>
+        <span class="shareopt-chev" aria-hidden="true">›</span>
+      </button>
+      <button class="shareopt" type="button" data-share-mode="line">
+        <span class="shareopt-ico" aria-hidden="true">💬</span>
+        <span class="shareopt-body">
+          <span class="shareopt-title">LINEへ転送</span>
+          <span class="shareopt-sub">次の画面で「LINE」を選んで送信</span>
+        </span>
+        <span class="shareopt-chev" aria-hidden="true">›</span>
+      </button>
+      <button class="shareopt" type="button" data-share-mode="print">
+        <span class="shareopt-ico" aria-hidden="true">🖨️</span>
+        <span class="shareopt-body">
+          <span class="shareopt-title">印刷</span>
+          <span class="shareopt-sub">そのまま印刷画面を開きます</span>
+        </span>
+        <span class="shareopt-chev" aria-hidden="true">›</span>
+      </button>
+    </div>
+    <p class="sharenote" id="shareGuideNote">※iPhone・スマホでは、ボタンを押すと出てくる一覧から選んだアプリをタップしてください（PCではPDFを保存して添付します）。</p>
+  </div>
+</div>
 
 <div class="bar" id="bar">
   <div class="inner" id="barInner"></div>
@@ -1608,6 +1692,117 @@ function printPdf(){
   }, 6000);
 }
 
+/* ---------- 11b. 転送メニュー（メール・AirDrop・LINE・印刷） ---------- */
+const DEFAULT_SHARE_GUIDE = "※iPhone・スマホでは、ボタンを押すと出てくる一覧から選んだアプリをタップしてください（PCではPDFを保存して添付します）。";
+
+function openShareModal(){
+  if(!lastPdf || !lastPdf.bytes){
+    toast("先に「申込書PDFを作成する」を押してください", 3200);
+    return;
+  }
+  const guide = $("shareGuideNote");
+  if(guide){
+    guide.className = "sharenote";
+    guide.textContent = DEFAULT_SHARE_GUIDE;
+  }
+  const modal = $("shareModal");
+  if(modal) modal.classList.add("open");
+}
+
+function closeShareModal(){
+  const modal = $("shareModal");
+  if(modal) modal.classList.remove("open");
+}
+
+function triggerPdfDownload(url, filename){
+  try{
+    const a = document.createElement("a");
+    a.href = url; a.download = filename; a.rel = "noopener";
+    document.body.appendChild(a); a.click(); a.remove();
+    return true;
+  }catch(e){ return false; }
+}
+
+function sharePdfFallback(modeLabel){
+  const guide = $("shareGuideNote");
+  if(typeof isInAppBrowser === "function" && isInAppBrowser()){
+    if(guide){
+      guide.className = "sharenote warn";
+      guide.textContent = "アプリ内ブラウザ（LINE等）では共有画面が開けません。右下のメニューから「Safariで開く」を使うか、「PDFを開く・保存する」から送ってください。";
+    }
+    toast("アプリ内ブラウザでは共有できません。Safariで開くか「PDFを開く・保存する」をお試しください", 7000, true);
+    return;
+  }
+  triggerPdfDownload(lastPdf.url, lastPdf.filename);
+  const msg = "PDFを保存しました。保存したPDFを" + modeLabel + "に添付して送信してください。";
+  if(guide){
+    guide.className = "sharenote warn";
+    guide.textContent = msg;
+  }
+  toast(msg, 6500, true);
+}
+
+function sharePdfByMode(mode){
+  if(!lastPdf || !lastPdf.bytes){
+    closeShareModal();
+    toast("先に「申込書PDFを作成する」を押してください", 3200);
+    return;
+  }
+  if(mode === "print"){
+    closeShareModal();
+    printPdf();
+    return;
+  }
+  const modeLabel = mode === "mail" ? "メール" : (mode === "airdrop" ? "AirDrop" : "LINE");
+  const canTryShare = typeof File === "function" && typeof navigator.share === "function";
+  if(canTryShare){
+    let file = null;
+    try{
+      file = new File([lastPdf.bytes], lastPdf.filename, { type: "application/pdf" });
+    }catch(e){ file = null; }
+    let ok = !!file;
+    if(ok && typeof navigator.canShare === "function"){
+      try{ ok = navigator.canShare({ files: [file] }); }catch(e){ ok = false; }
+    }
+    if(ok){
+      let p = null;
+      try{
+        p = navigator.share({ files: [file], title: lastPdf.filename });
+      }catch(e){ p = null; }
+      if(p && typeof p.then === "function"){
+        p.then(() => {
+          closeShareModal();
+        }).catch(err => {
+          const nm = err && err.name ? err.name : "";
+          if(nm === "AbortError"){
+            closeShareModal();
+            return;
+          }
+          sharePdfFallback(modeLabel);
+        });
+        return;
+      }
+    }
+  }
+  sharePdfFallback(modeLabel);
+}
+
+(function initShareModal(){
+  const modal = $("shareModal");
+  if(!modal) return;
+  const closeBtn = $("shareModalClose");
+  if(closeBtn) closeBtn.addEventListener("click", closeShareModal);
+  modal.addEventListener("click", e => {
+    if(e.target === modal) closeShareModal();
+  });
+  modal.querySelectorAll("[data-share-mode]").forEach(btn => {
+    btn.addEventListener("click", () => sharePdfByMode(btn.getAttribute("data-share-mode")));
+  });
+  document.addEventListener("keydown", e => {
+    if(e.key === "Escape" && modal.classList.contains("open")) closeShareModal();
+  });
+})();
+
 async function makePdf(){
   const btn = $("makePdf");
   const area = $("resultArea");
@@ -1727,7 +1922,8 @@ async function makePdf(){
           '申込書PDFを作成しました</p>' +
         '<div class="f"></div>' +
         '<div class="btnrow">' +
-          '<button class="btn small printbtn" id="printPdf" type="button"><span class="pico" aria-hidden="true">🖨️</span>印刷する</button>' +
+          '<button class="btn small printbtn" id="sharePdf" type="button"><span class="pico" aria-hidden="true">📤</span>転送する（メール・AirDrop・LINE・印刷）</button>' +
+          '<button class="btn small ghost printbtn" id="printPdf" type="button"><span class="pico" aria-hidden="true">🖨️</span>印刷する</button>' +
           '<a class="btn small ghost" id="dl2" style="text-align:center;text-decoration:none;display:block">PDFを開く・保存する</a>' +
         '</div>' +
         '<p class="note printnote" id="printNote" style="display:none"></p>' +
@@ -1736,9 +1932,10 @@ async function makePdf(){
         '<div id="previewWrap"><div class="previewmsg">プレビューを読み込み中…</div></div>' +
         '<p class="note">印刷して提出してください。プレビューが表示されない場合は、上のボタンからPDFを開いてご確認ください。</p></div>';
     area.querySelector(".f").textContent = filename;
-    lastPdf = { url: url, filename: filename };
+    lastPdf = { url: url, filename: filename, bytes: bytes };
     area.querySelector("#dl2").href = url;
     area.querySelector("#dl2").setAttribute("target", "_blank");
+    area.querySelector("#sharePdf").addEventListener("click", openShareModal);
     area.querySelector("#printPdf").addEventListener("click", printPdf);
     if(isIosSafari()){
       const pn = area.querySelector("#printNote");

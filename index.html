@@ -73,6 +73,13 @@
   .event .name{font-size:16.5px; font-weight:700; margin:2px 0 4px}
   .event .meta{font-size:12px; color:var(--muted)}
   .event .dead{font-size:11.5px; color:var(--warn); margin-top:5px; line-height:1.4}
+  .event .wx{margin-top:6px; font-size:11.5px; line-height:1.55; color:#3f4753;
+    display:flex; flex-wrap:wrap; align-items:baseline}
+  .event .wx[hidden]{display:none}
+  .event .wx .wxi{white-space:nowrap}
+  .event .wx .wxi + .wxi::before{content:"｜"; color:#c7ced6; margin:0 3px}
+  .event .wx .wxi b{font-size:12.5px; font-weight:700; color:var(--ink)}
+  .event .wx .wxnote{font-size:11px; color:var(--muted)}
   .event .date{display:flex; flex-wrap:wrap; gap:4px}
   .event .arrow{float:right; color:var(--brand); font-size:18px; margin-top:-4px}
 
@@ -763,6 +770,156 @@ const EVENT_IDS = SPEC.forms.map(f => f.id);
 const CATEGORIES = ["スモール", "ミディアム", "インターミディエイト", "ラージ"];
 const SEXES = ["オス", "メス"];
 
+/* ---------- 1b. 会場の座標と大会当日の天気予報（Open-Meteo） ---------- */
+/* 会場マスタ：会場名 → 住所・緯度・経度（Google マップで会場の住所から取得）。
+   天気は「大会の会場」の座標で取る（自宅や現在地ではない）。
+   ・新しい大会を追加するとき：会場名がここにあれば自動で天気が出る。
+   ・無い会場なら、会場の住所から緯度・経度を調べて↓に1行追加するか、
+     その大会（SPEC.forms）に lat / lon を持たせる（そちらが優先）。
+   ※ 会場名は「ドラゴンハット（滋賀県竜王町）」のように括弧書きが付いても、
+     括弧を外した名前で照合する。 */
+const VENUES = {
+  "藍住町・吉野川北岸名田橋下公園": {
+    address: "徳島県板野郡藍住町名田（吉野川北岸）", lat: 34.1099, lon: 134.4935 },
+  "ドラゴンハット": {
+    address: "滋賀県蒲生郡竜王町岡屋3282", lat: 35.0517, lon: 136.1165 },
+  "吉見総合運動公園": {
+    address: "埼玉県比企郡吉見町今泉141", lat: 36.0575, lon: 139.4716 },
+  "泉大津フェニックス": {
+    address: "大阪府泉大津市夕凪町", lat: 34.5154, lon: 135.3720 }
+};
+const WX_CACHE = {};            /* "lat,lon" → {at, daily}：同じ座標は1回だけ取得 */
+const WX_TTL_MS = 30 * 60 * 1000;
+const WX_FORECAST_DAYS = 16;    /* Open-Meteo の予報日数（これより先は「約2週間前から」） */
+const WX_TIMEOUT_MS = 8000;
+
+/* 会場の座標。様式の lat / lon があればそれを、無ければ会場名で VENUES を引く */
+function venueOf(f){
+  if(!f) return null;
+  let lat = null, lon = null;
+  if(typeof f.lat === "number" && typeof f.lon === "number"){
+    lat = f.lat; lon = f.lon;
+  }else{
+    /* 会場名（括弧書き・空白を外す）で会場マスタを引く */
+    const name = String(f.venue || "").replace(/[（(][^）)]*[）)]/g, "").replace(/\s+/g, "").trim();
+    const v = VENUES[name];
+    if(v){ lat = Number(v.lat); lon = Number(v.lon); }
+  }
+  if(lat == null || lon == null || isNaN(lat) || isNaN(lon)) return null;
+  return { key: lat.toFixed(3) + "," + lon.toFixed(3), lat: lat, lon: lon };
+}
+
+/* WMO 天気コード → [絵文字, 短い天気名] */
+const WX_NAMES = {
+  0: ["☀️", "晴れ"], 1: ["🌤️", "ほぼ晴れ"], 2: ["⛅", "晴れ時々くもり"], 3: ["☁️", "くもり"],
+  45: ["🌫️", "霧"], 48: ["🌫️", "霧"],
+  51: ["🌦️", "弱い霧雨"], 53: ["🌦️", "霧雨"], 55: ["🌧️", "強い霧雨"],
+  56: ["🌧️", "着氷性の霧雨"], 57: ["🌧️", "着氷性の霧雨"],
+  61: ["🌦️", "小雨"], 63: ["🌧️", "雨"], 65: ["🌧️", "強い雨"],
+  66: ["🌧️", "着氷性の雨"], 67: ["🌧️", "着氷性の雨"],
+  71: ["🌨️", "小雪"], 73: ["🌨️", "雪"], 75: ["❄️", "大雪"], 77: ["🌨️", "雪あられ"],
+  80: ["🌦️", "にわか雨"], 81: ["🌧️", "にわか雨"], 82: ["⛈️", "激しいにわか雨"],
+  85: ["🌨️", "にわか雪"], 86: ["🌨️", "強いにわか雪"],
+  95: ["⛈️", "雷雨"], 96: ["⛈️", "雷雨（ひょう）"], 99: ["⛈️", "雷雨（ひょう）"]
+};
+function wxName(code){
+  if(code == null) return null;
+  if(WX_NAMES[code]) return WX_NAMES[code];
+  if(code <= 1) return WX_NAMES[1];
+  if(code <= 3) return WX_NAMES[3];
+  return ["🌥️", "天気"];
+}
+function wxUrl(v){
+  return "https://api.open-meteo.com/v1/forecast?latitude=" + v.lat +
+    "&longitude=" + v.lon +
+    "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max" +
+    "&wind_speed_unit=ms&timezone=Asia%2FTokyo&forecast_days=" + WX_FORECAST_DAYS;
+}
+function wxNum(v, digits){
+  if(v == null || v === "" || isNaN(Number(v))) return null;
+  const p = Math.pow(10, digits);
+  return Math.round(Number(v) * p) / p;
+}
+function wxSetNote(el, text){
+  if(!el) return;
+  el.hidden = false;
+  el.textContent = "";
+  const s = document.createElement("span");
+  s.className = "wxnote";
+  s.textContent = text;
+  el.appendChild(s);
+}
+/* 大会カード1枚分の天気を描く。ymd の予報が無ければ控えめな案内にする */
+function wxRender(el, daily, ymd){
+  if(!el) return;
+  const idx = (daily && daily.time) ? daily.time.indexOf(ymd) : -1;
+  if(idx < 0){
+    wxSetNote(el, "🌤 天気予報は開催約2週間前から表示");
+    return;
+  }
+  const pick = (k) => (daily[k] && daily[k][idx] != null) ? daily[k][idx] : null;
+  const w = wxName(pick("weather_code"));
+  const tmax = wxNum(pick("temperature_2m_max"), 0);
+  const tmin = wxNum(pick("temperature_2m_min"), 0);
+  const pp = wxNum(pick("precipitation_probability_max"), 0);
+  const wind = wxNum(pick("wind_speed_10m_max"), 1);
+  const parts = [];
+  if(w) parts.push([w[0] + " " + w[1], true]);
+  if(tmax != null && tmin != null) parts.push(["最高" + tmax + "℃ / 最低" + tmin + "℃", false]);
+  else if(tmax != null) parts.push(["最高" + tmax + "℃", false]);
+  else if(tmin != null) parts.push(["最低" + tmin + "℃", false]);
+  if(pp != null) parts.push(["降水 " + pp + "%", false]);
+  if(wind != null) parts.push(["風 " + wind.toFixed(1) + "m/s", false]);
+  if(!w && tmax == null && tmin == null){
+    /* 予報最終日などでまだ値が入っていない場合は、空欄にせず控えめに伝える */
+    wxSetNote(el, "🌤 この日の予報はまだ出ていません");
+    return;
+  }
+  if(!parts.length){
+    wxSetNote(el, "🌤 天気予報は開催約2週間前から表示");
+    return;
+  }
+  el.hidden = false;
+  el.textContent = "";
+  parts.forEach(p => {
+    const s = document.createElement("span");
+    s.className = "wxi";
+    if(p[1]){
+      const b = document.createElement("b");
+      b.textContent = p[0];
+      s.appendChild(b);
+    }else{
+      s.textContent = p[0];
+    }
+    el.appendChild(s);
+  });
+  el.title = "Open-Meteo の予報（" + ymd + "）";
+}
+/* 会場ごとに1回だけ取得し、同じ座標の大会（2日連続開催など）で使い回す */
+function loadWeather(groups){
+  Object.keys(groups).forEach(key => {
+    const g = groups[key];
+    const apply = (daily) => { g.items.forEach(it => wxRender(it.el, daily, it.ymd)); };
+    const cached = WX_CACHE[key];
+    if(cached && (Date.now() - cached.at) < WX_TTL_MS){ apply(cached.daily); return; }
+    const ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => { try{ ctrl.abort(); }catch(e){} }, WX_TIMEOUT_MS) : null;
+    fetch(wxUrl(g), ctrl ? { signal: ctrl.signal } : {})
+      .then(res => { if(!res.ok) throw new Error("HTTP " + res.status); return res.json(); })
+      .then(json => {
+        const daily = json && json.daily;
+        if(!daily || !daily.time || !daily.time.length) throw new Error("no daily data");
+        WX_CACHE[key] = { at: Date.now(), daily: daily };
+        apply(daily);
+      })
+      .catch(err => {
+        /* 通信できない・オフラインのときは何も出さない（申込みの操作は妨げない） */
+        try{ console.warn("[weather] 予報を取得できませんでした: " + (err && err.message ? err.message : err)); }catch(e){}
+      })
+      .then(() => { if(timer) clearTimeout(timer); });
+  });
+}
+
 /* ---------- 2. サンプルデータ ---------- */
 const SAMPLE = {
   /* すべて架空のダミーデータ（公開デモ用） */
@@ -994,6 +1151,7 @@ function setStep(n){
 function renderEventList(){
   const wrap = $("eventList");
   wrap.innerHTML = "";
+  const wxGroups = {};   /* 会場の座標ごとにまとめ、1回のAPI呼び出しで取る */
   EVENT_IDS.forEach(id => {
     const f = FORMS[id];
     const btn = document.createElement("button");
@@ -1004,12 +1162,20 @@ function renderEventList(){
     btn.innerHTML =
       '<span class="arrow">›</span>' +
       '<div class="date"></div><div class="name"></div><div class="meta"></div>' +
-      '<div class="dead"></div>';
+      '<div class="dead"></div>' +
+      '<div class="wx" hidden></div>';
     btn.querySelector(".date").textContent = f.dateText + " ／ 締切 " + f.deadline;
     btn.querySelector(".name").textContent = f.label.replace(/^.*／/, "");
     btn.querySelector(".meta").textContent = f.venue + " ／ 競技クラス：" + cls +
       (multiEvent(f) ? "（" + maxClasses(f) + "クラスまで同時に○印可）" : "");
     if(f.note) btn.querySelector(".dead").textContent = f.note;
+    /* 大会当日の天気予報（取得できたら締切の下に出る） */
+    const wxEl = btn.querySelector(".wx");
+    const v = venueOf(f);
+    if(wxEl && v && f.ymd){
+      if(!wxGroups[v.key]) wxGroups[v.key] = { lat: v.lat, lon: v.lon, items: [] };
+      wxGroups[v.key].items.push({ ymd: f.ymd, el: wxEl });
+    }
     if(id === S.event) btn.style.borderColor = "var(--brand)";
     btn.addEventListener("click", () => {
       const before = classList(S.dog);
@@ -1033,6 +1199,7 @@ function renderEventList(){
     });
     wrap.appendChild(btn);
   });
+  loadWeather(wxGroups);
 }
 $("back1").addEventListener("click", () => setStep(1));
 $("back2").addEventListener("click", () => setStep(2));

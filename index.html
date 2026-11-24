@@ -370,6 +370,46 @@
     background:#f8fafc; border:1px solid var(--line); border-radius:10px; padding:8px 10px;
   }
   .sharenote.warn{background:var(--warn-soft); border-color:#f59e0b; color:#7c2d12; font-weight:600}
+
+  /* 利用統計（管理者用・シークレット画面） */
+  .statsmask{
+    position:fixed; inset:0; z-index:90;
+    background:rgba(15,23,42,.62); backdrop-filter:blur(3px);
+    display:none; align-items:flex-end; justify-content:center;
+    padding:10px; padding-bottom:calc(10px + env(safe-area-inset-bottom));
+  }
+  .statsmask.open{display:flex}
+  @media (min-width:520px){ .statsmask{align-items:center} }
+  .statssheet{
+    width:100%; max-width:480px; max-height:88vh; overflow:auto; -webkit-overflow-scrolling:touch;
+    background:#fff; border-radius:18px; padding:15px 15px 13px;
+    box-shadow:0 18px 42px rgba(0,0,0,.26); border:1px solid var(--line);
+  }
+  .statshead{display:flex; align-items:center; justify-content:space-between; gap:8px}
+  .statshead h3{margin:0; font-size:16px; font-weight:800; color:var(--ink)}
+  .statsupdated{font-size:11px; color:var(--muted); margin:3px 0 10px}
+  .statsgrid{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+  .statcell{background:#f8fafc; border:1px solid var(--line); border-radius:12px; padding:9px 10px}
+  .statcell .lab{font-size:11px; color:var(--muted); font-weight:600; line-height:1.3}
+  .statcell .val{font-size:20px; font-weight:800; color:var(--brand-dark); line-height:1.3}
+  .statcell .val.small{font-size:15px}
+  .statcell .val small{font-size:11.5px; font-weight:700; color:var(--muted); margin-left:2px}
+  .statsec{margin-top:13px}
+  .statsec h4{margin:0 0 6px; font-size:12.5px; font-weight:800; color:#374151}
+  .statrow{display:flex; align-items:center; gap:8px; font-size:12px; padding:3px 0}
+  .statrow .nm{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .statrow .num{font-variant-numeric:tabular-nums; color:#4b5563; font-size:11.5px; white-space:nowrap}
+  .statbar{height:6px; border-radius:4px; background:var(--brand-soft); overflow:hidden}
+  .statbar > i{display:block; height:100%; background:var(--brand)}
+  .statday{display:flex; align-items:center; gap:7px; font-size:11.5px; padding:2px 0}
+  .statday .d{width:46px; color:var(--muted); font-variant-numeric:tabular-nums}
+  .statday .bar{flex:1; height:9px; background:#f1f3f5; border-radius:5px; overflow:hidden; display:flex}
+  .statday .bar i{display:block; height:100%}
+  .statday .bar i.v{background:#5eead4}
+  .statday .bar i.p{background:var(--brand-dark)}
+  .statday .n{width:56px; text-align:right; color:#4b5563; font-variant-numeric:tabular-nums}
+  .statsfoot{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap}
+  .statserr{background:var(--warn-soft); border:1px solid #f59e0b; color:#7c2d12; font-size:11.5px; border-radius:10px; padding:8px 10px; line-height:1.5}
 </style>
 </head>
 <body>
@@ -735,6 +775,23 @@
       </button>
     </div>
     <p class="sharenote" id="shareGuideNote">※iPhone・スマホでは、ボタンを押すと出てくる一覧から選んだアプリをタップしてください（PCではPDFを保存して添付します）。</p>
+  </div>
+</div>
+
+<!-- 利用統計（茂樹さん専用）。?stats=… か、タイトルを5回連続タップで開く。通常の利用者には見えない -->
+<div class="statsmask" id="statsModal" role="dialog" aria-modal="true" aria-labelledby="statsTitle">
+  <div class="statssheet">
+    <div class="statshead">
+      <h3 id="statsTitle">📊 利用統計</h3>
+      <button class="sharex" id="statsClose" type="button">閉じる</button>
+    </div>
+    <div class="statsupdated" id="statsUpdated">読み込み中…</div>
+    <div id="statsBody"></div>
+    <div class="statsfoot">
+      <button class="btn small ghost" id="statsReload" type="button" style="flex:1">🔄 最新の数字に更新</button>
+      <a class="btn small ghost" id="statsSheetLink" href="#" target="_blank" rel="noopener" style="flex:1;text-align:center;text-decoration:none;display:block">📄 スプレッドシートを開く</a>
+    </div>
+    <p class="sharenote" style="margin-top:10px">※この画面は茂樹さん専用です。訪問・PDF作成・転送の回数と滞在時間だけを匿名で記録しています（犬名・ご住所・電話番号・メールなどの個人情報は送信していません）。</p>
   </div>
 </div>
 
@@ -1905,6 +1962,7 @@ function openShareModal(){
   }
   const modal = $("shareModal");
   if(modal) modal.classList.add("open");
+  try{ Track.transfer(); }catch(e){ /* 統計の送信失敗は無視 */ }
 }
 
 function closeShareModal(){
@@ -2128,6 +2186,7 @@ async function makePdf(){
       '</div>';
     area.querySelector(".f").textContent = filename;
     lastPdf = { url: url, filename: filename, bytes: bytes };
+    try{ Track.pdf(); }catch(e){ /* 統計の送信失敗は無視 */ }
     area.querySelector("#dl2").href = url;
     area.querySelector("#dl2").setAttribute("target", "_blank");
     area.querySelector("#sharePdf").addEventListener("click", openShareModal);
@@ -2585,6 +2644,227 @@ $("bkFile").addEventListener("change", () => {
   reader.readAsText(f);
 });
 
+/* ---------- 13. 匿名利用統計（Google Apps Script） ---------- */
+/*  個人情報（犬名・飼い主名・住所・電話・メールなど）は一切送らない・保存しない。
+    送るのは「セッションID / イベント種別 / 大会名 / 滞在秒数 / 端末種別」だけ。
+    送信に失敗してもアプリの動作には一切影響させない（すべて try/catch で握りつぶす）。*/
+const STATS_URL = "";   /* ← GAS（Apps Script）のウェブアプリURL（デプロイ後にここへ） */
+const STATS_KEY = "funstyle2026";
+const STATS_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Ij0OWCe-l7Fyf6toqZjiXpWbtZqAhXckqiqbxpvXAYc/edit";
+
+const Track = (function(){
+  const sid = (function(){
+    try{
+      const a = new Uint8Array(8);
+      (window.crypto || window.msCrypto).getRandomValues(a);
+      return Array.prototype.map.call(a, function(b){ return ("0" + b.toString(16)).slice(-2); }).join("");
+    }catch(e){ return "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  })();
+  const device = (function(){
+    const ua = navigator.userAgent || "";
+    if(/iPhone|iPod/.test(ua)) return "iPhone";
+    if(/iPad/.test(ua)) return "iPad";
+    if(/Android/.test(ua)) return "Android";
+    return "PC";
+  })();
+  const startAt = Date.now();
+  let leaveSent = false;
+  const pdfSent = {};
+
+  function send(payload, beacon){
+    try{
+      if(!STATS_URL) return;
+      const body = JSON.stringify(payload);
+      if(beacon && navigator.sendBeacon){
+        try{
+          if(navigator.sendBeacon(STATS_URL, new Blob([body], { type: "text/plain;charset=UTF-8" }))) return;
+        }catch(e){ /* fetch で送り直す */ }
+      }
+      fetch(STATS_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "text/plain" },
+        body: body,
+        keepalive: true
+      }).catch(function(){});
+    }catch(e){ /* 静かに無視 */ }
+  }
+  function ev(name, extra){
+    try{
+      const p = { sessionId: sid, event: name, device: device };
+      if(extra){ for(const k in extra) p[k] = extra[k]; }
+      send(p, false);
+    }catch(e){}
+  }
+  function compInfo(){
+    try{
+      const f = FORMS[S.event];
+      if(!f) return {};
+      return { compId: f.id, compName: f.short || f.label || f.id };
+    }catch(e){ return {}; }
+  }
+  return {
+    sid: sid,
+    device: device,
+    visit: function(){ ev("visit", compInfo()); },
+    pdf: function(){
+      try{
+        const c = compInfo();
+        const key = (c.compId || "") + "|" + classList(S.dog).join("+");
+        if(pdfSent[key]) return;   /* 同じ内容の二重送信は抑える */
+        pdfSent[key] = 1;
+        ev("pdf", c);
+      }catch(e){}
+    },
+    transfer: function(){ ev("transfer", compInfo()); },
+    leave: function(){
+      if(leaveSent) return;
+      let sec = Math.round((Date.now() - startAt) / 1000);
+      if(!(sec > 0)) return;
+      leaveSent = true;
+      if(sec > 7200) sec = 7200;
+      const p = { sessionId: sid, event: "leave", durationSec: sec, device: device };
+      const c = compInfo();
+      if(c.compId){ p.compId = c.compId; p.compName = c.compName; }
+      send(p, true);
+    }
+  };
+})();
+
+/* ---------- 13b. 統計パネル（茂樹さん専用・シークレット） ---------- */
+function fmtStatsDur(sec){
+  const s = Math.max(0, Math.round(Number(sec) || 0));
+  const m = Math.floor(s / 60), r = s % 60;
+  if(m <= 0) return r + "秒";
+  return m + "分" + (r ? r + "秒" : "");
+}
+function escStatsHtml(t){
+  return String(t == null ? "" : t).replace(/[&<>"']/g, function(c){
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+function renderStats(d){
+  const body = $("statsBody"), upd = $("statsUpdated");
+  if(upd) upd.textContent = "最終更新：" + (d.updatedAt || "—");
+  if(!body) return;
+  function cell(lab, val, sub, small){
+    return '<div class="statcell"><div class="lab">' + lab + '</div><div class="val' + (small ? " small" : "") + '">' +
+      escStatsHtml(val) + (sub ? '<small>' + escStatsHtml(sub) + '</small>' : '') + '</div></div>';
+  }
+  let html = '<div class="statsgrid">' +
+    cell("累計の訪問（セッション）", String(d.totalSessions || 0), "回") +
+    cell("今日の訪問", String(d.todayVisits || 0), "回") +
+    cell("累計のPDF作成", String(d.totalPdf || 0), "件") +
+    cell("今日のPDF作成", String(d.todayPdf || 0), "件") +
+    cell("「転送する」の利用", String(d.totalTransfer || 0), "回") +
+    cell("平均滞在時間", fmtStatsDur(d.avgDurationSec), "", true) +
+  '</div>';
+
+  const comps = Array.isArray(d.byComp) ? d.byComp : [];
+  html += '<div class="statsec"><h4>大会別の利用回数</h4>';
+  if(!comps.length){
+    html += '<div class="statrow"><span class="nm">まだ記録がありません</span></div>';
+  }else{
+    let maxV = 1;
+    comps.forEach(function(c){ maxV = Math.max(maxV, c.visits || 0, c.pdfs || 0); });
+    comps.forEach(function(c){
+      const name = c.name || "(大会名なし)";
+      html += '<div class="statrow"><span class="nm">' + escStatsHtml(name) + '</span>' +
+        '<span class="num">閲覧 ' + (c.visits || 0) + ' ・ PDF ' + (c.pdfs || 0) + '</span></div>' +
+        '<div class="statbar"><i style="width:' + Math.round((c.pdfs || 0) / maxV * 100) + '%"></i></div>';
+    });
+  }
+  html += '</div>';
+
+  const days = Array.isArray(d.recentDays) ? d.recentDays : [];
+  html += '<div class="statsec"><h4>直近7日間の推移</h4>';
+  if(!days.length){
+    html += '<div class="statrow"><span class="nm">まだ記録がありません</span></div>';
+  }else{
+    let maxD = 1;
+    days.forEach(function(x){ maxD = Math.max(maxD, x.visits || 0, x.pdfs || 0); });
+    days.forEach(function(x){
+      const dt = String(x.date || "");
+      const label = dt.slice(5).replace("-", "/");
+      const wv = Math.round((x.visits || 0) / maxD * 100);
+      const wp = Math.round((x.pdfs || 0) / maxD * 100);
+      html += '<div class="statday"><span class="d">' + escStatsHtml(label) + '</span>' +
+        '<span class="bar"><i class="v" style="width:' + wv + '%"></i><i class="p" style="width:' + wp + '%"></i></span>' +
+        '<span class="n">' + (x.visits || 0) + ' / ' + (x.pdfs || 0) + '</span></div>';
+    });
+    html += '<p class="sharenote" style="margin-top:6px">左＝アクセス（水色）／右＝PDF作成（濃い緑）。数字は「アクセス / PDF」。</p>';
+  }
+  html += '</div>';
+  body.innerHTML = html;
+}
+function loadStats(){
+  const body = $("statsBody"), upd = $("statsUpdated");
+  if(upd) upd.textContent = "読み込み中…";
+  if(body) body.innerHTML = '<p class="statsupdated">GASから最新の数字を読み込んでいます…</p>';
+  if(!STATS_URL){
+    if(upd) upd.textContent = "";
+    if(body) body.innerHTML = '<div class="statserr">GASのウェブアプリURLが未設定です（配信側の設定待ち）。</div>';
+    return;
+  }
+  fetch(STATS_URL + "?key=" + encodeURIComponent(STATS_KEY), { cache: "no-store" })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(!d || d.ok !== true) throw new Error((d && d.error) || "unauthorized");
+      renderStats(d);
+    })
+    .catch(function(err){
+      if(upd) upd.textContent = "";
+      if(body) body.innerHTML = '<div class="statserr">数字を読み込めませんでした（通信環境、またはGASの公開設定「全員」をご確認ください）。<br>' +
+        escStatsHtml(err && err.message ? err.message : err) + '</div>';
+    });
+}
+function openStatsModal(){
+  const m = $("statsModal");
+  if(!m) return;
+  m.classList.add("open");
+  loadStats();
+}
+function closeStatsModal(){
+  const m = $("statsModal");
+  if(m) m.classList.remove("open");
+}
+(function initStatsPanel(){
+  const m = $("statsModal");
+  if(!m) return;
+  const closeBtn = $("statsClose");
+  if(closeBtn) closeBtn.addEventListener("click", closeStatsModal);
+  m.addEventListener("click", function(e){ if(e.target === m) closeStatsModal(); });
+  const reload = $("statsReload");
+  if(reload) reload.addEventListener("click", loadStats);
+  const link = $("statsSheetLink");
+  if(link) link.href = STATS_SHEET_URL;
+  document.addEventListener("keydown", function(e){ if(e.key === "Escape") closeStatsModal(); });
+
+  /* 入口①：?stats=funstyle2026（または #stats=funstyle2026）で開く */
+  let fromUrl = false;
+  try{
+    const q = new URLSearchParams(location.search);
+    if(q.get("stats") === STATS_KEY) fromUrl = true;
+    if(!fromUrl && (location.hash || "").indexOf("stats=" + STATS_KEY) >= 0) fromUrl = true;
+  }catch(e){}
+  if(fromUrl) setTimeout(openStatsModal, 400);
+
+  /* 入口②：ヘッダーのタイトルを2.5秒以内に5回連続タップ（見た目には何も出さない） */
+  const head = document.querySelector("header .brandrow h1") || document.querySelector("header .brandrow");
+  if(head){
+    let taps = [];
+    head.addEventListener("click", function(){
+      const now = Date.now();
+      taps.push(now);
+      taps = taps.filter(function(t){ return now - t <= 2500; });
+      if(taps.length >= 5){
+        taps = [];
+        openStatsModal();
+      }
+    });
+  }
+})();
+
 /* ---------- 12. 起動 ---------- */
 load();
 applyImportFromHash();
@@ -2606,6 +2886,15 @@ updateEventBack();
 try{
   const face = new FontFace("AppJP", getFontBytes().buffer);
   face.load().then(f => document.fonts.add(f)).catch(() => {});
+}catch(e){ /* no-op */ }
+
+/* 匿名統計：訪問を記録し、離脱時に滞在時間を送る（失敗してもアプリは止めない） */
+try{
+  Track.visit();
+  document.addEventListener("visibilitychange", function(){
+    if(document.visibilityState === "hidden") Track.leave();
+  });
+  window.addEventListener("pagehide", function(){ Track.leave(); });
 }catch(e){ /* no-op */ }
 
 })();

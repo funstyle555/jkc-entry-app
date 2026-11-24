@@ -2648,7 +2648,7 @@ $("bkFile").addEventListener("change", () => {
 /*  個人情報（犬名・飼い主名・住所・電話・メールなど）は一切送らない・保存しない。
     送るのは「セッションID / イベント種別 / 大会名 / 滞在秒数 / 端末種別」だけ。
     送信に失敗してもアプリの動作には一切影響させない（すべて try/catch で握りつぶす）。*/
-const STATS_URL = "";   /* ← GAS（Apps Script）のウェブアプリURL（デプロイ後にここへ） */
+const STATS_URL = "https://script.google.com/macros/s/AKfycbwY8gaZGofM83NZ6ANf1YGZRAOoPPkYIljRqGqVOWoxA2yWntyTOzGS3ZHzoD3_T8Go-w/exec";
 const STATS_KEY = "funstyle2026";
 const STATS_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Ij0OWCe-l7Fyf6toqZjiXpWbtZqAhXckqiqbxpvXAYc/edit";
 

@@ -2849,14 +2849,15 @@ function closeStatsModal(){
   }catch(e){}
   if(fromUrl) setTimeout(openStatsModal, 400);
 
-  /* 入口②：ヘッダーのタイトルを5回連続タップ（2.5秒以内の5連打で確実に開く。見た目には何も出さない）
-     ※タップ間隔が 1.5秒 以内なら5回で開く（ゆっくり目の5連打でも開くように） */
+  /* 入口②：ヘッダーのタイトルを5回連続タップ（見た目には何も出さない）
+     ※「2.5秒以内に5回」の5連打で確実に開く。取りこぼしを防ぐため、1回ごとの間隔が2.5秒以内なら
+       5回目で開く（ゆっくり目の5連打でも開く）。 */
   const head = document.querySelector("header .brandrow h1") || document.querySelector("header .brandrow");
   if(head){
     let taps = 0, lastTap = 0;
     head.addEventListener("click", function(){
       const now = Date.now();
-      taps = (now - lastTap <= 1500) ? taps + 1 : 1;
+      taps = (now - lastTap <= 2500) ? taps + 1 : 1;
       lastTap = now;
       if(taps >= 5){
         taps = 0;

@@ -63,12 +63,17 @@
   h2.sechead{font-size:15px; margin:0 0 8px; font-weight:700}
   .lead{font-size:12.5px; color:var(--muted); margin:-4px 0 12px}
 
+  /* 大会カード。本体（.hit）をタップすると大会を選ぶ。
+     地図リンクは .hit の外側に置き、押しても大会選択に進まないようにしている */
   .event{
     display:block; width:100%; text-align:left; background:var(--card); border:1.5px solid var(--line);
     border-radius:var(--radius); padding:15px 16px; margin-bottom:12px; cursor:pointer;
     box-shadow:0 1px 3px rgba(16,24,40,.05); font-family:inherit; color:inherit;
+    -webkit-tap-highlight-color:transparent;
   }
-  .event:active{transform:scale(.995)}
+  .event .hit{display:block; outline:none; -webkit-tap-highlight-color:transparent}
+  .event .hit:active{opacity:.72}
+  .event .hit:focus-visible{outline:2px solid var(--brand); outline-offset:4px; border-radius:6px}
   .event .date{font-size:12px; color:var(--brand); font-weight:700}
   .event .name{font-size:16.5px; font-weight:700; margin:2px 0 4px}
   .event .meta{font-size:12px; color:var(--muted)}
@@ -83,6 +88,17 @@
   .event .wx .wxday{margin-left:4px; color:var(--muted); font-size:11px; white-space:nowrap}
   .event .date{display:flex; flex-wrap:wrap; gap:4px}
   .event .arrow{float:right; color:var(--brand); font-size:18px; margin-top:-4px}
+  /* 天気の行：左に天気、右に現地のGoogleマップを開くボタン（天気が出ない日もボタンは常に出す） */
+  .event .wxrow{display:flex; align-items:center; gap:8px; margin-top:6px}
+  .event .wxrow .wx{flex:1 1 auto; min-width:0; margin-top:0}
+  .event .mapbtn{
+    flex:0 0 auto; margin-left:auto; display:inline-flex; align-items:center; gap:2px;
+    font-size:11.5px; font-weight:700; line-height:1.2; color:var(--brand-dark);
+    background:var(--brand-soft); border:1px solid rgba(15,118,110,.24); border-radius:999px;
+    padding:5px 10px; min-height:27px; text-decoration:none; white-space:nowrap;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .event .mapbtn:active{background:#d5ebe7; color:var(--brand-dark)}
 
   .card{
     background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
@@ -447,6 +463,7 @@
     <div class="card" style="margin-top:14px">
       <h3>アップデート記録</h3>
       <ul class="summary">
+        <li><span class="k">11/26</span><span class="v">各大会の天気の横に「🗺 マップ」を追加（現地のGoogleマップが開く・天気が出ない日も表示）</span></li>
         <li><span class="k">11/24</span><span class="v">大会一覧に会場当日の天気予報（気温・降水確率・風速・大会◯日前）を表示</span></li>
         <li><span class="k">11/23</span><span class="v">PDF作成後に「転送する」（メール・AirDrop・LINE・印刷）を追加し、最上部へ配置</span></li>
         <li><span class="k">11/21</span><span class="v">トップ写真を追加し、会員期限のPDF印字と複数クラス（最大3つ）同時選択に対応</span></li>
@@ -842,13 +859,17 @@ const SEXES = ["オス", "メス"];
      括弧を外した名前で照合する。 */
 const VENUES = {
   "藍住町・吉野川北岸名田橋下公園": {
-    address: "徳島県板野郡藍住町名田（吉野川北岸）", lat: 34.1099, lon: 134.4935 },
+    address: "徳島県板野郡藍住町名田（吉野川北岸）", lat: 34.1099, lon: 134.4935,
+    placeId: "ChIJRzJyNHNzUzURoYOutDOFo6k" },
   "ドラゴンハット": {
-    address: "滋賀県蒲生郡竜王町岡屋3282", lat: 35.0517, lon: 136.1165 },
+    address: "滋賀県蒲生郡竜王町岡屋3282", lat: 35.0517, lon: 136.1165,
+    placeId: "ChIJR2Iks5VkAWARoYmos5VDhPU" },
   "吉見総合運動公園": {
-    address: "埼玉県比企郡吉見町今泉141", lat: 36.0575, lon: 139.4716 },
+    address: "埼玉県比企郡吉見町今泉141", lat: 36.0575, lon: 139.4716,
+    placeId: "ChIJaV4xHBTTGGAR_XTyaWtKhGw" },
   "泉大津フェニックス": {
-    address: "大阪府泉大津市夕凪町", lat: 34.5154, lon: 135.3720 }
+    address: "大阪府泉大津市夕凪町", lat: 34.5154, lon: 135.3720,
+    placeId: "ChIJI39fBALEAGARtW5V5EAYLRc" }
 };
 const WX_CACHE = {};            /* "lat,lon" → {at, daily}：同じ座標は1回だけ取得 */
 const WX_TTL_MS = 30 * 60 * 1000;
@@ -858,17 +879,29 @@ const WX_TIMEOUT_MS = 8000;
 /* 会場の座標。様式の lat / lon があればそれを、無ければ会場名で VENUES を引く */
 function venueOf(f){
   if(!f) return null;
-  let lat = null, lon = null;
+  let lat = null, lon = null, address = "", placeId = "";
   if(typeof f.lat === "number" && typeof f.lon === "number"){
     lat = f.lat; lon = f.lon;
+    address = f.venueAddress || ""; placeId = f.placeId || "";
   }else{
     /* 会場名（括弧書き・空白を外す）で会場マスタを引く */
     const name = String(f.venue || "").replace(/[（(][^）)]*[）)]/g, "").replace(/\s+/g, "").trim();
     const v = VENUES[name];
-    if(v){ lat = Number(v.lat); lon = Number(v.lon); }
+    if(v){ lat = Number(v.lat); lon = Number(v.lon); address = v.address || ""; placeId = v.placeId || ""; }
   }
   if(lat == null || lon == null || isNaN(lat) || isNaN(lon)) return null;
-  return { key: lat.toFixed(3) + "," + lon.toFixed(3), lat: lat, lon: lon };
+  return { key: lat.toFixed(3) + "," + lon.toFixed(3), lat: lat, lon: lon, address: address, placeId: placeId };
+}
+/* 会場をGoogleマップで開くURL（座標にピンを立てる。会場のplace_idが分かる会場はその場所のページを開く） */
+function venueMapUrl(f){
+  const v = venueOf(f);
+  if(v){
+    return "https://www.google.com/maps/search/?api=1&query=" + v.lat + "%2C" + v.lon +
+      (v.placeId ? "&query_place_id=" + encodeURIComponent(v.placeId) : "");
+  }
+  /* 座標が無い会場は、会場名で検索する（新しい会場を足したときの保険） */
+  const name = String((f && f.venue) || "").trim();
+  return name ? "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(name) : null;
 }
 
 /* WMO 天気コード → [絵文字, 短い天気名] */
@@ -1242,30 +1275,52 @@ function renderEventList(){
   const wxGroups = {};   /* 会場の座標ごとにまとめ、1回のAPI呼び出しで取る */
   EVENT_IDS.forEach(id => {
     const f = FORMS[id];
-    const btn = document.createElement("button");
-    btn.type = "button";
+    const btn = document.createElement("div");
     btn.className = "event";
     btn.setAttribute("data-event", id);
     const cls = f.classes.join("・");
+    /* カード本体（.hit）と天気・地図の行（.wxrow）を分ける。
+       地図リンクをカード本体の外に置くことで、地図を押しても大会選択には進まない */
     btn.innerHTML =
-      '<span class="arrow">›</span>' +
-      '<div class="date"></div><div class="name"></div><div class="meta"></div>' +
-      '<div class="dead"></div>' +
-      '<div class="wx" hidden></div>';
+      '<div class="hit" role="button" tabindex="0">' +
+        '<span class="arrow">›</span>' +
+        '<div class="date"></div><div class="name"></div><div class="meta"></div>' +
+        '<div class="dead"></div>' +
+      '</div>' +
+      '<div class="wxrow"><div class="wx" hidden></div></div>';
     btn.querySelector(".date").textContent = f.dateText + " ／ 締切 " + f.deadline;
     btn.querySelector(".name").textContent = f.label.replace(/^.*／/, "");
     btn.querySelector(".meta").textContent = f.venue + " ／ 競技クラス：" + cls +
       (multiEvent(f) ? "（" + maxClasses(f) + "クラスまで同時に○印可）" : "");
     if(f.note) btn.querySelector(".dead").textContent = f.note;
+    const v = venueOf(f);
+    /* 現地のGoogleマップを開くリンク（天気がまだ出ない大会でも常に出す） */
+    const mapUrl = venueMapUrl(f);
+    if(mapUrl){
+      const a = document.createElement("a");
+      a.className = "mapbtn";
+      a.href = mapUrl;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.textContent = "🗺 マップ";
+      a.title = "Googleマップで開く：" + f.venue + (v && v.address ? "（" + v.address + "）" : "");
+      a.setAttribute("aria-label", "Googleマップで会場を開く：" + f.venue);
+      btn.querySelector(".wxrow").appendChild(a);
+    }
     /* 大会当日の天気予報（取得できたら締切の下に出る） */
     const wxEl = btn.querySelector(".wx");
-    const v = venueOf(f);
     if(wxEl && v && f.ymd){
       if(!wxGroups[v.key]) wxGroups[v.key] = { lat: v.lat, lon: v.lon, items: [] };
       wxGroups[v.key].items.push({ ymd: f.ymd, el: wxEl });
     }
     if(id === S.event) btn.style.borderColor = "var(--brand)";
-    btn.addEventListener("click", () => {
+    const hit = btn.querySelector(".hit");
+    hit.setAttribute("aria-label", f.short + " を選ぶ");
+    /* キーボード（Enter / スペース）でも選べるようにする */
+    hit.addEventListener("keydown", (ev) => {
+      if(ev.key === "Enter" || ev.key === " "){ ev.preventDefault(); hit.click(); }
+    });
+    hit.addEventListener("click", () => {
       const before = classList(S.dog);
       S.event = id;
       fitDogClasses(S.dog);
